@@ -1,0 +1,6 @@
+TT_DATABASE="*"
+TT_ADDR="/tmp/tt-example.sock"
+TT_PORT=0
+TT_UID=nobody:nobody
+TT_MASK="copy,restore,repl,slave"
+TT_PID="/tmp/tt-example.pid"

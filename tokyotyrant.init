@@ -1,0 +1,170 @@
+#!/bin/sh
+#
+# tokyotyrant      This shell script starts and stops TokyoTyrant server processes.
+#
+# chkconfig:   2345 80 30
+# description: Tokyo Tyrant is a network interface to the Tokyo Cabinet DBM-like database.
+# processname: ttserver
+# pidfile:  /var/run/tokyotyrant/*.pid
+
+# Source function library.
+. /etc/rc.d/init.d/functions
+
+# Source networking configuration.
+. /etc/sysconfig/network
+
+# Source default configureation.
+. /etc/sysconfig/tokyotyrant
+
+# Check that networking is up.
+if is_yes "${NETWORKING}"; then
+	if [ ! -f /var/lock/subsys/network -a "$1" != stop -a "$1" != status ]; then
+		msg_network_down "TokyoTyrant"
+		exit 1
+	fi
+else
+	exit 0
+fi
+
+tt_start() {
+	(
+		. /etc/tokyotyrant.d/${1}
+		msg_starting "TokyoTyrant (${1})"
+		# user/group
+		ssdargs="$ssdargs ${TT_UID:+-c $TT_UID}"
+
+		# bind address
+		args="$args ${TT_ADDR:+-host $TT_ADDR}"
+		args="$args ${TT_PORT:+-port $TT_PORT}"
+		
+		args="$args ${TT_THREADS:+-thnum $TT_THREADS}"
+		args="$args ${TT_TIMEOUT:+-tout $TT_TIMEOUT}"
+		args="$args ${TT_MASK:+-mask $TT_MASK}"
+		args="$args ${TT_UNMASK:+-unmask $TT_UNMASK}"
+		args="$args ${TT_LOGFILE:+-log $TT_LOGFILE}"
+		args="$args ${TT_SKEL:+-skel $TT_SKEL}"
+		args="$args $TT_ARGS"
+
+		# set umask the same way daemon() does.
+		[ -z "$DEFAULT_SERVICE_UMASK" ] && DEFAULT_SERVICE_UMASK=022
+		umask ${SERVICE_UMASK:-$DEFAULT_SERVICE_UMASK}
+
+		env -i PATH=$PATH /sbin/start-stop-daemon --start -x /usr/bin/ttserver -p /var/run/tokyotyrant/${1}.pid -o $ssdargs -g tokyotyrant -- -pid /var/run/tokyotyrant/${1}.pid -dmn $args "$TT_DATABASE"
+		RETVAL=$?
+
+		if [ $RETVAL -eq 0 ]; then
+			ok
+		else
+			fail
+		fi
+
+	)
+	return $?
+}
+
+tt_stop() {
+	(
+		. /etc/tokyotyrant.d/${1}
+		msg_stopping "TokyoTyrant (${1})"
+		killproc --pidfile tokyotyrant/${1}.pid /usr/bin/ttserver
+	)
+	return $?
+}
+
+start() {
+	local file
+	local files
+	local nstarted=0
+	local nfailed=0
+	if [ ! -f /var/lock/subsys/tokyotyrant ]; then
+		if [ ! -f /etc/tokyotyrant.d/* ]; then
+			nls "Error: no TokyoTyrant configuration files in %s, nothing to run" "/etc/tokyotyrant.d/"
+			exit 1
+		fi
+
+		# Check if we were called to start a particular instance
+                if [ -n "$1" ]; then
+                        files=/etc/tokyotyrant.d/$1
+                else
+                        files=/etc/tokyotyrant.d/*
+                fi
+		
+		for file in $files; do
+			if [ ! -f $file ]; then
+				nls "Error: configuration for instance '%s' not found" $file
+                                continue
+			fi
+			if [ ! -x $file ]; then
+				nls "Notice: ignored instance '%s' configuration, not executable" $file
+                                continue
+			fi
+			tt_start ${file##*/}
+			RETVAL=$?
+			if [ $RETVAL -eq 0 ]; then
+				let nstarted=$nstarted+1
+			else
+				let nfailed=$nfailed+1
+			fi
+		done
+		
+		if [ $nfailed -gt 0 ]; then
+			nls "Warning: some TokyoTyrant instances failed to start"
+		fi
+		
+		if [ $nstarted -gt 0 ]; then
+			touch /var/lock/subsys/tokyotyrant
+		fi
+				
+	else
+		msg_already_running "TokyoTyrant"
+	fi
+}
+
+stop() {
+	# Stop daemons.
+	local file
+	local files
+	if [ -f /var/lock/subsys/tokyotyrant ]; then
+
+		# Check if we were called to stop a particular instance
+		if [ -n "$1" ]; then
+			files=/etc/tokyotyrant.d/$1
+		else
+			files=/etc/tokyotyrant.d/*
+		fi
+
+		for file in $files; do
+			if [ ! -f $file ]; then
+				nls "Error: configuration for instance '%s' not found" $file
+				continue
+			fi
+			tt_stop ${file##*/}
+		done
+		rm -f /var/lock/subsys/tokyotyrant >/dev/null 2>&1
+	else
+		msg_not_running "TokyoTyrant"
+	fi
+}
+
+RETVAL=0
+# See how we were called.
+case "$1" in
+start)
+	start $2
+	;;
+stop)
+	stop $2
+	;;
+restart|force-reload)
+	stop $2
+	start $2
+	;;
+status)
+	# FIXME
+	;;
+*)
+	msg_usage "$0 {start|stop|restart|force-reload|status}"
+	exit 3
+esac
+
+exit $RETVAL
