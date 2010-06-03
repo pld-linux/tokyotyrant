@@ -10,6 +10,9 @@ Source0:	http://1978th.net/tokyotyrant/%{name}-%{version}.tar.gz
 Source1:	%{name}.init
 Source2:	%{name}-example-config
 URL:		http://1978th.net/tokyotyrant/
+BuildRequires:	autoconf
+BuildRequires:	automake
+BuildRequires:	libtool
 BuildRequires:	tokyocabinet-devel
 BuildRequires:	zlib-devel
 Requires(post,preun):	/sbin/chkconfig
